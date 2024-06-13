@@ -22,5 +22,8 @@ def rsquared(y_true:np.ndarray, y_pred:np.ndarray):
     ss_tot = np.sum((y_true - np.mean(y_true))**2)
     return 1 - (ss_res / (ss_tot+0.0000001))
 
-def get_regressor_conservative_predictions(regressor, X_pool:np.ndarray):
-    
+def get_regressor_uncertainty(regressor, X_pool:np.ndarray):
+    """
+    Returns uncertainty (between 0 and 1, where 0 is certain and 1 is uncertain)
+    """
+    return np.zeros(len(X_pool)) # Temporary

@@ -3,7 +3,7 @@ import sobol_seq
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
-from .datasetup import DataSetup, ContinuousDesignBound, CategoricalDesignBound, TargetPerformance
+from .datasetup import RegressionDataSetup, ContinuousDesignBound, CategoricalDesignBound, TargetPerformanceRegress
 import math
 from .helper import classifier_predict_simple_uncertainty, rsquared, get_regressor_uncertainty
 import tensorflow as tf
@@ -26,7 +26,7 @@ def weighted_binary_crossentropy(alpha, beta):
         return K.mean(loss)
     return loss
 
-class UncertaintyActiveLearner:
+class RegressorActiveLearner:
     def get_valid(X):
         # Returns True for valid points
         return np.ones(len(X), dtype=bool)
@@ -34,9 +34,7 @@ class UncertaintyActiveLearner:
     def get_regressor_accuracy(model, X, Y):
         X_train, X_val, Y_train, Y_val = train_test_split(X, Y, test_size=0.2, random_state=MEANING_OF_LIFE)
         model.fit(X_train, Y_train, 
-            epochs=10, 
-            batch_size=32, 
-            validation_data=(X_val, Y_val), verbose=0)
+            epochs=10, verbose=0)
         y_pred = model.predict(X_val)
         return rsquared(Y_val, y_pred)
     
@@ -98,7 +96,7 @@ class UncertaintyActiveLearner:
                 # one_hot = np.append(one_hot, np.eye(len(self.params[i].categories))[X[:,i]], axis=1)
         return np.transpose(one_hot)
 
-    def __init__(self, data_pack:DataSetup, fail_predictor=None, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
+    def __init__(self, data_pack:RegressionDataSetup, fail_predictor=None, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
         if(fail_predictor is None):
             total_input_len = 0
             for param in data_pack.params:
@@ -188,7 +186,7 @@ class UncertaintyActiveLearner:
             self.fail_predictor.fit(self._convert_to_one_hot(X_train), Y_train_success)
             for i in range(len(self.target_perfs)):
                 print("Fitting performance validity estimator for", self.target_perfs[i].label, "...")
-                self.target_perfs[i].estimator.fit(self._convert_to_one_hot(self.X_train), self._convert_to_one_hot(self.Y_train_perfs[:,i]))
+                self.target_perfs[i].regressor.fit(self._convert_to_one_hot(self.X_train), self._convert_to_one_hot(self.Y_train_perfs[:,i]))
 
     def query(self, batchNum:int, proximity_weight:float=0.5) -> np.ndarray:
         if len(self.X_pool) == 0:
@@ -208,11 +206,12 @@ class UncertaintyActiveLearner:
         # _, classifier_uncertainty = self.classifier_predict_uncertainty_func(self.fail_predictor, self._convert_to_one_hot(self.X_pool))
         fail_predictions = self.fail_predictor.predict(self._convert_to_one_hot(self.X_pool)).flatten()
         total_ml_uncertainty = 1-abs(2*fail_predictions-1)
-
+        # print("Fail preds: ", fail_predictions)
+        # print("Success: ",self.Y_train_success)
         for perf in self.target_perfs:
             # _, uncertainty = perf.performance_predict_uncertainty_func(perf.estimator, self._convert_to_one_hot(self.X_pool))
             # classifier_uncertainty = np.add(uncertainty, classifier_uncertainty)
-            unc = get_regressor_uncertainty(perf.estimator,self._convert_to_one_hot(self.X_pool)).flatten()
+            unc = get_regressor_uncertainty(perf.regressor,self._convert_to_one_hot(self.X_pool)).flatten()
             total_ml_uncertainty = np.add(unc, total_ml_uncertainty)
 
         total_ml_uncertainty /= len(self.target_perfs) + 1
@@ -243,7 +242,7 @@ class UncertaintyActiveLearner:
             # distance_scores = pairwise_distances(self.X_pool, tempTrain, metric='euclidean').min(axis=1)
             # similarity_scores = 1 / (1 + distance_scores)
             # _, similarity_scores = self.get_similarity_scores(self.X_pool, tempTrain)
-            print("Getting query number ",i, end="\r")
+            print("Getting query number ",i+1, end="\r")
             # print(1)
             dists = np.sum((hot_pool - hot_deleted)**2, axis=1)
             for j in range(len(similarity_scores)):
@@ -286,9 +285,9 @@ class UncertaintyActiveLearner:
             plt.legend()
         plt.show()
         return batch
-
+        
     def teach(self, X:np.ndarray, Y_success:np.ndarray, Y_perfs:np.ndarray, proximity_weight=0.1) -> None:
-        print("Fitting failure predictor...")
+        print("Fitting failure classifier...")
         if(len(self.X_train) == 0):
             self.X_train = np.array(X)
             self.Y_train_success = np.array(Y_success)
@@ -299,19 +298,23 @@ class UncertaintyActiveLearner:
             self.Y_train_perfs = np.append(self.Y_train_perfs, Y_perfs, axis=0)
         self.fail_predictor.fit(self._convert_to_one_hot(self.X_train), self.Y_train_success)
         for i in range(len(self.target_perfs)):
-            print("Fitting performance validity estimator for", self.target_perfs[i].label, "...")
+            print("Fitting performance regressor and validity classifier for", self.target_perfs[i].label, "...")
             # print("Valids: ",self.target_perfs[i].validity_checker(self.Y_train_perfs[:,i]))
-            self.target_perfs[i].estimator.fit(self._convert_to_one_hot(self.X_train), self._convert_to_one_hot(self.Y_train_perfs[:,i]))
+            
+            self.target_perfs[i].regressor.fit(self._convert_to_one_hot(self.X_train), self.Y_train_perfs[:,i])
+            self.target_perfs[i].classifier.fit(self._convert_to_one_hot(self.X_train), self.target_perfs[i].validity_checker(self.Y_train_perfs[:,i]))
             # p, _ = self.target_perfs[i].performance_predict_uncertainty_func(self.target_perfs[i].estimator, self._convert_to_one_hot(self.X_train))
             # print("truths:",self.target_perfs[i].validity_checker(self.Y_train_perfs[:,i]))
-        
+        print("-"*70)
+        print("Getting uncertainities for invalidity classifier...")
         # Deleting points predicted to fail or have invalid performance values
-        _, similarity_scores = self.get_similarity_scores(self.X_pool, self.X_train)
+        dissimilarity_scores, _ = self.get_similarity_scores(self.X_pool, self.X_train) # Dis Scores is the distances
         # fail_predictions, classifier_uncertainty = self.classifier_predict_uncertainty_func(self.fail_predictor, self._convert_to_one_hot(self.X_pool))
         fail_predictions = self.fail_predictor.predict(self._convert_to_one_hot(self.X_pool)).flatten()
-        classifier_uncertainty = 1-abs(2*fail_predictions-1)
+        # classifier_uncertainty = 1-abs(2*fail_predictions-1)
         # print("Similiarity Scores: ", similarity_scores)
-        uncertainty_scores = proximity_weight * (1 - similarity_scores) + (1 - proximity_weight) * classifier_uncertainty
+        # uncertainty_scores = proximity_weight * (1 - similarity_scores) + (1 - proximity_weight) * classifier_uncertainty
+        uncertainty_scores = proximity_weight * dissimilarity_scores
         # print("unc sc",uncertainty_scores)
         # print("sim sc",similarity_scores)
         # print("class unc",classifier_uncertainty)
@@ -321,16 +324,19 @@ class UncertaintyActiveLearner:
         # total_invalidity = cutted.flatten()**certainty_scores
         total_invalidity = fail_predictions.flatten()**certainty_scores
         stack = [total_invalidity]
-        print("predictions: ",fail_predictions)
+        # print("predictions: ",fail_predictions)
         for perf in self.target_perfs:
+            print("Computing uncertainities for ", perf.label, "...")
             # _, uncertainty = perf.performance_predict_uncertainty_func(perf.estimator, self._convert_to_one_hot(self.X_pool))
-            preds = perf.estimator.predict(self._convert_to_one_hot(self.X_pool)).flatten()
-            uncertainty = 1-abs(2*preds-1)
+            preds = perf.classifier.predict(self._convert_to_one_hot(self.X_pool)).flatten()
+            # uncertainty = 1-abs(2*preds-1)
+            # No need for classifier uncertainty since it's already biased towards valid
             print("Preds for ", perf.label, ": ", preds)
-            uncertainty_scores = proximity_weight * (1 - similarity_scores) + (1 - proximity_weight) * uncertainty
-            certainty_scores = 1 - uncertainty_scores
+            print("minimum pred: ", np.min(preds))
+            # uncertainty_scores = proximity_weight * (1 - similarity_scores) + (1 - proximity_weight) * uncertainty
+            # certainty_scores = 1 - uncertainty_scores
             # print("Fail Predictions: ", predictions)
-            print("Certainty Scores for ", perf.label, ": ", certainty_scores)
+            # print("Certainty Scores for ", perf.label, ": ", certainty_scores)
             
             # cutted = np.copy(fail_predictions)
             # cutted[cutted>0.5] = 1
@@ -339,11 +345,12 @@ class UncertaintyActiveLearner:
             # invalidity = cutted.flatten()**certainty_scores
             invalidity = preds.flatten()**certainty_scores
             # print(1)
-            print("Invalidity for ", perf.label, ": ", invalidity)
+            # print("Invalidity for ", perf.label, ": ", invalidity)
             total_invalidity = total_invalidity*(invalidity)
             # print(2, len(stack[0]))
             stack = np.append(stack, [invalidity], axis=0)
             # print(3)
+        print("-"*70)
         # Mask is True for points that are predicted to fail or be outside thresholds and have low uncertainty
         mask = (total_invalidity<self.UNCERTAINTY_THRESHOLD)  # Assumes 0 is invalid
         # print("MIN CERTAINTY SCORE: ", np.min(total_invalidity))
@@ -363,17 +370,18 @@ class UncertaintyActiveLearner:
         # print("PerfsDict: ",perfsdict)
         print("Deleted", initialLen-finalLen, "points from pool due to certain invalidity.")
         if 0 in perfsdict:
-            print("Deleted", perfsdict[0], "points from pool due to certain invalidity for failure prediction.")
+            print("    Deleted", perfsdict[0], "points from pool due to certain invalidity for failure prediction.")
         for i in range(len(self.target_perfs)):
             if (i+1) in perfsdict:    
-                print("Deleted", perfsdict[i+1], "points from pool due to certain invalidity for", self.target_perfs[i].label,".")
+                print("    Deleted", perfsdict[i+1], "points from pool due to certain invalidity for", self.target_perfs[i].label,".")
         print("Total remining points in the pool/design space: ", len(self.X_pool))
-        print()
+        print('-'*70)
+
         for i in range(len(self.target_perfs)):
             print("Fitting redundancy regressor for", self.target_perfs[i].label, "...")
             accuracy = self.regressor_accuracy_func(self.redundancy_regressor, np.delete(self.Y_train_perfs, i, axis=1), self.Y_train_perfs[:, i])
             if(accuracy>REDUNDANCY_THRESHOLD):
-                print("DETECTED REDUNDANT PERFORMANCE VALUE: accuracy for predicting ", perf.label, " from other performance vaued is ", accuracy, ".")
+                print('\033[1m'+'DETECTED REDUNDANT PERFORMANCE VALUE'+'\033[0m'+': Accuracy for predicting ', self.target_perfs[i].label, " from other performance values is ", accuracy)
         self.queryNum += 1
 
     def get_pool_size(self):
