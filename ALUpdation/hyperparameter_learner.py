@@ -3,7 +3,7 @@ import sobol_seq
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
-from .datasetup import RegressionDataSetup, ContinuousDesignBound, CategoricalDesignBound, TargetPerformanceRegress
+from .datasetup import HyperparamDataSetup, ContinuousDesignBound, CategoricalDesignBound, TargetPerformanceHyperparam, GluonClassifier
 import math
 from .helper import classifier_predict_simple_uncertainty, rsquared, get_regressor_uncertainty
 import tensorflow as tf
@@ -27,7 +27,7 @@ def weighted_binary_crossentropy(alpha, beta):
         return K.mean(loss)
     return loss
 
-class RegressorActiveLearner:
+class HyperparamActiveLearner:
     def get_valid(X):
         # Returns True for valid points
         return np.ones(len(X), dtype=bool)
@@ -97,7 +97,7 @@ class RegressorActiveLearner:
                 # one_hot = np.append(one_hot, np.eye(len(self.params[i].categories))[X[:,i]], axis=1)
         return np.transpose(one_hot)
 
-    def __init__(self, data_pack:RegressionDataSetup, fail_predictor=None, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
+    def __init__(self, data_pack:HyperparamDataSetup, fail_predictor=None, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
         if(fail_predictor is None):
             total_input_len = 0
             for param in data_pack.params:
@@ -105,15 +105,16 @@ class RegressorActiveLearner:
                     total_input_len += 1
                 else:
                     total_input_len += len(param.categories)
-            self.fail_predictor = tf.keras.Sequential([
-                tf.keras.layers.Dense(100, activation='relu', input_shape=(total_input_len,)),
-                tf.keras.layers.Dropout(DROPOUT_RATE),
-                tf.keras.layers.Dense(50, activation='relu'),
-                tf.keras.layers.Dense(1, activation='sigmoid')
-            ])
-            self.fail_predictor.compile(optimizer='adam',
-              loss=weighted_binary_crossentropy(3, 1),
-              metrics=['accuracy'])
+            # self.fail_predictor = tf.keras.Sequential([
+            #     tf.keras.layers.Dense(100, activation='relu', input_shape=(total_input_len,)),
+            #     tf.keras.layers.Dropout(DROPOUT_RATE),
+            #     tf.keras.layers.Dense(50, activation='relu'),
+            #     tf.keras.layers.Dense(1, activation='sigmoid')
+            # ])
+            # self.fail_predictor.compile(optimizer='adam',
+            #   loss=weighted_binary_crossentropy(3, 1),
+            #   metrics=['accuracy'])
+            self.fail_predictor = GluonClassifier("Failure Prediction")
         else:
             self.fail_predictor = fail_predictor
         self.target_perfs = data_pack.target_perfs
@@ -200,6 +201,7 @@ class RegressorActiveLearner:
             return ret
         if(self.queryNum == 0):
             print("Generating initial batch...")
+            self.all_stuff = self.X_pool
             ret = self.X_pool[:batchNum]
             self.X_pool = self.X_pool[batchNum:]
             return ret
@@ -268,7 +270,6 @@ class RegressorActiveLearner:
             hot_pool = np.delete(hot_pool, max_index, axis=0)
         print("\nDone querying. Generating visual model...")
         
-        
         pca = PCA(n_components=2)
         pca.fit(X=self.complete_vec)
         # print("pool: ",self.X_pool)
@@ -287,7 +288,6 @@ class RegressorActiveLearner:
             plt.title('Scores of query #'+str(self.queryNum))
             plt.legend()
         plt.show()
-
 
 
         return batch
@@ -367,6 +367,7 @@ class RegressorActiveLearner:
         # print("stack: ",stack)
         initialLen = len(self.X_pool)
         deleted = stack[mask]
+        deletedPoints = self.X_pool[mask]
         self.X_pool = self.X_pool[~mask]
         finalLen = len(self.X_pool)
 
@@ -389,6 +390,7 @@ class RegressorActiveLearner:
             if(accuracy>REDUNDANCY_THRESHOLD):
                 print('\033[1m'+'DETECTED REDUNDANT PERFORMANCE VALUE'+'\033[0m'+': Accuracy for predicting ', self.target_perfs[i].label, " from other performance values is ", accuracy)
         self.queryNum += 1
+        return deletedPoints
 
     def get_pool_size(self):
         return len(self.X_pool)
@@ -398,3 +400,12 @@ class RegressorActiveLearner:
         # return dists, 1 / (1 + pairwise_distances(self._convert_to_reduced_one_hot(X), self._convert_to_reduced_one_hot(X_train), metric='euclidean').min(axis=1))
         dists = pairwise_distances(self._convert_to_one_hot_hypercube(X), self._convert_to_one_hot_hypercube(X_train), metric='euclidean').min(axis=1)
         return dists, 1-dists
+
+    def get_overall_accuracy(self, true_vals):
+        mses = []
+        for i in range(len(self.target_perfs)):
+            # We get mean squared error for each performance value
+            preds = self.target_perfs[i].regressor.predict(self._convert_to_one_hot(self.all_stuff))
+            mses.append(np.mean(np.abs((true_vals[:, i] - preds)/true_vals[:, i])))
+        # Return the harmonic mean of the mses
+        return len(mses)/np.sum(1.0/np.array(mses))

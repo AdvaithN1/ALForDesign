@@ -4,6 +4,49 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from .helper import classifier_predict_simple_uncertainty, fit
+from autogluon.tabular import TabularPredictor
+import pandas as pd
+
+class GluonClassifier(TabularPredictor):
+    def __init__(self, label, path=None):
+        super().__init__(label=label, path=path, verbosity=1, problem_type='binary')
+        self.lab = label
+        self.pat = path
+    
+    def fit(self, X, y_train, **kwargs):
+        super().__init__(label=self.lab, path=self.pat, verbosity=1, problem_type='binary')
+        df_train = pd.DataFrame(X)
+        df_train[self.label] = y_train
+        
+        super().fit(df_train, presets='medium_quality',**kwargs)
+    
+    def predict(self, X, **kwargs):
+        df_test = pd.DataFrame(X)
+        
+        predictions_proba = super().predict_proba(df_test, **kwargs)
+        
+        return predictions_proba.iloc[:, 1].values  # Assuming positive class is the second column
+
+class GluonRegressor(TabularPredictor):
+    def __init__(self, label, path=None):
+        super().__init__(label=label, path=path, problem_type='regression', verbosity=1)
+        self.lab = label
+        self.pat = path
+
+    def fit(self, X, y_train, **kwargs):
+        super().__init__(label=self.lab, path=self.pat, problem_type='regression', verbosity=1)
+        df_train = pd.DataFrame(X)
+        df_train[self.label] = y_train
+        
+        super().fit(df_train,  presets='medium_quality', **kwargs)
+    
+    def predict(self, X, **kwargs):
+        df_test = pd.DataFrame(X)
+        
+        predictions = super().predict(df_test, **kwargs)
+        
+        return predictions.values
+
 
 def weighted_binary_crossentropy(alpha, beta):
     """
@@ -18,20 +61,28 @@ def weighted_binary_crossentropy(alpha, beta):
     return loss
 
 class TargetPerformance:
-    def __init__(self, validity_checker:Callable[[np.ndarray], np.ndarray], label, estimator=None, classifier=None, performance_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, target_perf_fit_func:Callable[[Any, np.ndarray, np.ndarray], None]=fit):
+    def __init__(self, validity_checker:Callable[[np.ndarray], np.ndarray], label, estimator=None, classifier=None, target_perf_fit_func:Callable[[Any, np.ndarray, np.ndarray], None]=fit):
         self.estimator = estimator
         self.target_perf_fit_func = target_perf_fit_func
         self.label = label
         self.validity_checker = validity_checker
-
+        self.classifier = classifier
 class TargetPerformanceRegress:
-    def __init__(self, validity_checker:Callable[[np.ndarray], np.ndarray], label, estimator=None, classifier=None, performance_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, target_perf_fit_func:Callable[[Any, np.ndarray, np.ndarray], None]=fit):
+    def __init__(self, validity_checker:Callable[[np.ndarray], np.ndarray], label, estimator=None, classifier=None, target_perf_fit_func:Callable[[Any, np.ndarray, np.ndarray], None]=fit):
         self.regressor = estimator
         self.classifier = classifier
         self.target_perf_fit_func = target_perf_fit_func
         self.label = label
         self.validity_checker = validity_checker
 
+class TargetPerformanceHyperparam:
+    def __init__(self, validity_checker:Callable[[np.ndarray], np.ndarray], label, target_perf_fit_func:Callable[[Any, np.ndarray, np.ndarray], None]=fit):
+        self.target_perf_fit_func = target_perf_fit_func
+        self.label = label
+        self.validity_checker = validity_checker
+        self.classifier = GluonClassifier(label)
+        self.regressor = GluonRegressor(label)
+        
 class ContinuousDesignBound:
     def __init__(self, lower_bound:float, upper_bound:float, label):
         self.label = label
@@ -114,3 +165,14 @@ class RegressionDataSetup:
                 perf.classifier.compile(optimizer='adam',
                     loss=weighted_binary_crossentropy(0, 1),
                     metrics=['accuracy'])
+                
+class HyperparamDataSetup:
+    def __init__(self, params:List[Union[ContinuousDesignBound,CategoricalDesignBound]], targetPerfs:List[TargetPerformanceHyperparam]):
+        self.params = params
+        self.target_perfs = targetPerfs
+        total_input_len = 0
+        for param in params:
+            if isinstance(param, ContinuousDesignBound):
+                total_input_len += 1
+            else:
+                total_input_len += len(param.categories)

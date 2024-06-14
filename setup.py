@@ -18,9 +18,11 @@ setup(
     python_requires='>=3.6',
     install_requires=[
         'numpy',
-        'tf',
+        'pandas',
+        'tensorflow',
         'scikit-learn',
         'matplotlib',
-        'sobol_seq'
+        'sobol_seq',
+        'autogluon'
     ]
 ) 

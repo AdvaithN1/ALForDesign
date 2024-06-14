@@ -22,8 +22,21 @@ def rsquared(y_true:np.ndarray, y_pred:np.ndarray):
     ss_tot = np.sum((y_true - np.mean(y_true))**2)
     return 1 - (ss_res / (ss_tot+0.0000001))
 
-def get_regressor_uncertainty(regressor, X_pool:np.ndarray):
+def get_regressor_uncertainty(regressor, X_pool:np.ndarray, X_test:np.ndarray, y_test:np.ndarray):
     """
     Returns uncertainty (between 0 and 1, where 0 is certain and 1 is uncertain)
     """
-    return np.zeros(len(X_pool)) # Temporary
+    models = regressor.get_model_names()
+    totals = []
+    for model in models:
+        totals.append(np.array(regressor.predict(X_pool, model=model)))
+    totals = np.array(totals)
+    totals = totals.transpose()
+
+    variances = np.var(totals, axis=1)
+    variances = variances-np.min(variances)
+    variances = variances/np.max(variances)
+    return variances
+
+
+    # return np.zeros(len(X_pool)) # Temporary
