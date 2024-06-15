@@ -32,7 +32,7 @@ def weighted_binary_crossentropy(alpha, beta):
         return K.mean(loss)
     return loss
 
-class HyperparamActiveLearner:
+class QuantizedActiveLearner:
     def get_valid(X):
         # Returns True for valid points
         return np.ones(len(X), dtype=bool)
@@ -102,8 +102,7 @@ class HyperparamActiveLearner:
                 # one_hot = np.append(one_hot, np.eye(len(self.params[i].categories))[X[:,i]], axis=1)
         return np.transpose(one_hot)
 
-    def __init__(self, data_pack:HyperparamDataSetup, fail_predictor=None, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, use_absolute_query_strategy=False, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
-        self.use_absolute_query_strategy = use_absolute_query_strategy
+    def __init__(self, data_pack:HyperparamDataSetup, fail_predictor=None, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
         if(fail_predictor is None):
             total_input_len = 0
             for param in data_pack.params:
@@ -230,27 +229,21 @@ class HyperparamActiveLearner:
         if self.queryNum == 1:
             self.initial_residuals = avg_resids
         else:
-            if not self.use_absolute_query_strategy:
-                proximity_weight = min(proximity_weight * (avg_resids/self.initial_residuals), 1)
+            proximity_weight = min(proximity_weight * (avg_resids/self.initial_residuals), 1)
         print("USING PROXIMITY WEIGHT: ", proximity_weight)
         total_ml_uncertainty /= len(self.target_perfs) + 1
         distance_scores, similarity_scores = self.get_similarity_scores(self.X_pool, self.X_train)
         squared_dists = distance_scores**2
-        # scores = self.PROXIMITY_WEIGHT * (1 - similarity_scores) + (1 - self.PROXIMITY_WEIGHT) * classifier_uncertainty
-        # max_index = np.argmax(scores)
-        # batch = np.array([self.X_pool[max_index]])
-        # self.X_pool = np.delete(self.X_pool, max_index, axis=0)
-        # classifier_uncertainty = np.delete(classifier_uncertainty, max_index)
-        # scores = np.delete(scores = self.PROXIMITY_WEIGHT * (1 - similarity_scores) + (1 - self.PROXIMITY_WEIGHT) * classifier_uncertainty
-        scores = proximity_weight * (1 - similarity_scores) + (1 - proximity_weight) * total_ml_uncertainty
-        scores = scores**3
         hot_pool = self._convert_to_one_hot_hypercube(self.X_pool)
-        # print(hot_pool)
-        if self.use_absolute_query_strategy:
-                max_index = np.argmax(scores)
-        else:
-            max_index = np.random.choice(len(scores), p=scores/np.sum(scores))
+        
+        scores = proximity_weight + (1 - proximity_weight) * total_ml_uncertainty
+        scores = scores**3
+        chosen_index = np.random.choice(len(scores), p=scores/np.sum(scores))
+        error = total_ml_uncertainty[chosen_index]
+        indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-0.05 <= value <= error+0.05]
+        max_index = max(indexes, key=lambda i: squared_dists[i])
             
+        
         hot_deleted = self._convert_to_one_hot_hypercube([self.X_pool[max_index]])[0]
         batch = np.array([self.X_pool[max_index]])
         self.X_pool = np.delete(self.X_pool, max_index, axis=0)
@@ -277,12 +270,12 @@ class HyperparamActiveLearner:
                     # distance_scores[j] = dist
                     squared_dists[j] = dists[j]
                     similarity_scores[j] = 1 - math.sqrt(dists[j])
-            scores = proximity_weight * (1 - similarity_scores) + (1 - proximity_weight) * total_ml_uncertainty
+            scores = proximity_weight + (1 - proximity_weight) * total_ml_uncertainty
             scores = scores**3
-            if self.use_absolute_query_strategy:
-                max_index = np.argmax(scores)
-            else:
-                max_index = np.random.choice(len(scores), p=scores/np.sum(scores))
+            chosen_index = np.random.choice(len(scores), p=scores/np.sum(scores))
+            error = total_ml_uncertainty[chosen_index]
+            indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-0.01 <= value <= error+0.01]
+            max_index = max(indexes, key=lambda i: squared_dists[i])
             
             hot_deleted = self._convert_to_one_hot_hypercube([self.X_pool[max_index]])[0]
             batch = np.append(batch, [self.X_pool[max_index]], axis=0)

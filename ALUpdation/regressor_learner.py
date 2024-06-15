@@ -33,7 +33,7 @@ class RegressorActiveLearner:
         return np.ones(len(X), dtype=bool)
     
     def get_regressor_accuracy(model, X, Y):
-        X_train, X_val, Y_train, Y_val = train_test_split(X, Y, test_size=0.2, random_state=MEANING_OF_LIFE)
+        X_train, X_val, Y_train, Y_val = train_test_split(X, Y, test_size=0, random_state=MEANING_OF_LIFE)
         model.fit(X_train, Y_train, 
             epochs=10, verbose=0)
         y_pred = model.predict(X_val)
@@ -267,7 +267,6 @@ class RegressorActiveLearner:
             similarity_scores = np.delete(similarity_scores, max_index)
             hot_pool = np.delete(hot_pool, max_index, axis=0)
         print("\nDone querying. Generating visual model...")
-        
         
         pca = PCA(n_components=2)
         pca.fit(X=self.complete_vec)

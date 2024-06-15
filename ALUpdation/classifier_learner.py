@@ -10,9 +10,14 @@ import tensorflow as tf
 from tensorflow.keras import backend as K
 from typing import Callable, Any, Tuple
 import matplotlib.pyplot as plt
+import os
 
 MEANING_OF_LIFE = 42
 REDUNDANCY_THRESHOLD = 0.95
+
+os.environ['PYTHONHASHSEED'] = str(MEANING_OF_LIFE)
+np.random.seed(MEANING_OF_LIFE)
+tf.random.set_seed(MEANING_OF_LIFE)
 
 def weighted_binary_crossentropy(alpha, beta):
     """
