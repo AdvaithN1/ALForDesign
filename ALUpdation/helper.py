@@ -25,17 +25,20 @@ def rsquared(y_true:np.ndarray, y_pred:np.ndarray):
 
 def get_regressor_uncertainty(regressor, X_pool:np.ndarray, X_calib:np.ndarray, y_calib:np.ndarray, alpha=0.05):
     """
-    Returns uncertainty (between 0 and 1, where 0 is certain and 1 is uncertain)
+    Returns uncertainty (between 0 and 1, where 0 is certain and 1 is uncertain), MAPE
     """
     calib_predictions = regressor.predict(X_calib)
+    # print("PREDICTED:", calib_predictions)
+    # print("ACTUAL:", y_calib)
     # print("Calib predictions:", calib_predictions)
     # print("Calib y:", y_calib)
     calib_residuals = np.abs(calib_predictions - y_calib)
+    mape = np.mean(calib_residuals / np.abs(y_calib))
     knn = KNeighborsRegressor(n_neighbors=1)
     normalized_residuals = (calib_residuals - np.min(calib_residuals)) / (np.max(calib_residuals) - np.min(calib_residuals))
     knn.fit(X_calib, normalized_residuals)
 
-    return np.array(knn.predict(X_pool)).flatten(), np.mean(calib_residuals)
+    return np.array(knn.predict(X_pool)).flatten(), mape
 
     # models = regressor.get_model_names()
     # totals = []

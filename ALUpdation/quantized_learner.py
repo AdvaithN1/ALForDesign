@@ -12,6 +12,8 @@ import keras_tuner as kt
 from typing import Callable, Any, Tuple
 import matplotlib.pyplot as plt
 import os
+from scipy.stats import beta
+
 
 MEANING_OF_LIFE = 42
 REDUNDANCY_THRESHOLD = 0.95
@@ -102,7 +104,8 @@ class QuantizedActiveLearner:
                 # one_hot = np.append(one_hot, np.eye(len(self.params[i].categories))[X[:,i]], axis=1)
         return np.transpose(one_hot)
 
-    def __init__(self, data_pack:HyperparamDataSetup, fail_predictor=None, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
+    def __init__(self, data_pack:HyperparamDataSetup, fail_predictor=None, use_absolute_query_strategy=False, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
+        self.use_absolute_query_strategy = use_absolute_query_strategy
         if(fail_predictor is None):
             total_input_len = 0
             for param in data_pack.params:
@@ -194,7 +197,7 @@ class QuantizedActiveLearner:
                 print("Fitting performance validity estimator for", self.target_perfs[i].label, "...")
                 self.target_perfs[i].regressor.fit(self._convert_to_one_hot(self.X_train), self._convert_to_one_hot(self.Y_train_perfs[:,i]))
 
-    def query(self, batchNum:int, proximity_weight:float=0.5) -> np.ndarray:
+    def query(self, batchNum:int, proximity_weight:float=1) -> np.ndarray:
         if len(self.X_pool) == 0:
             print("No more points in pool. Please reinitialize the ActiveLearner with a greater DESIGN_SPACE_DENSITY.")
             return np.array([])
@@ -223,24 +226,36 @@ class QuantizedActiveLearner:
             # _, uncertainty = perf.performance_predict_uncertainty_func(perf.estimator, self._convert_to_one_hot(self.X_pool))
             # classifier_uncertainty = np.add(uncertainty, classifier_uncertainty)
             unc, avg_residuals = get_regressor_uncertainty(self.target_perfs[i].regressor, self._convert_to_one_hot(self.X_pool), self._convert_to_one_hot(self.X_calib), self.Y_calib[:, i])
-            total_residuals+=avg_residuals
+            total_residuals+=(1/avg_residuals)
             total_ml_uncertainty = np.add(unc, total_ml_uncertainty)
-        avg_resids = total_residuals/len(self.target_perfs)
-        if self.queryNum == 1:
-            self.initial_residuals = avg_resids
-        else:
-            proximity_weight = min(proximity_weight * (avg_resids/self.initial_residuals), 1)
+        avg_resids = len(self.target_perfs)/total_residuals
+
+        # if self.queryNum == 1:
+        #     self.initial_residuals = avg_resids
+        # else:
+        #     if not self.use_absolute_query_strategy:
+        #         proximity_weight = min(proximity_weight * (avg_resids/self.initial_residuals), 1)
+        if not self.use_absolute_query_strategy:
+            proximity_weight = min(proximity_weight * avg_resids, 1)
+        print("AVERAGE MAPE: ", avg_resids)
+        
         print("USING PROXIMITY WEIGHT: ", proximity_weight)
         total_ml_uncertainty /= len(self.target_perfs) + 1
         distance_scores, similarity_scores = self.get_similarity_scores(self.X_pool, self.X_train)
         squared_dists = distance_scores**2
         hot_pool = self._convert_to_one_hot_hypercube(self.X_pool)
         
+
         scores = proximity_weight + (1 - proximity_weight) * total_ml_uncertainty
-        scores = scores**3
+
+        scores = scores**(1/proximity_weight) # Change this
         chosen_index = np.random.choice(len(scores), p=scores/np.sum(scores))
         error = total_ml_uncertainty[chosen_index]
-        indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-0.05 <= value <= error+0.05]
+        
+        if self.use_absolute_query_strategy:
+            indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-1 <= value <= error+1]
+        else:
+            indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-0.1 <= value <= error+0.1]
         max_index = max(indexes, key=lambda i: squared_dists[i])
             
         
@@ -256,11 +271,7 @@ class QuantizedActiveLearner:
         # print("hot pool now: ",hot_pool)
 
         for i in range(1, batchNum):
-            # distance_scores = pairwise_distances(self.X_pool, tempTrain, metric='euclidean').min(axis=1)
-            # similarity_scores = 1 / (1 + distance_scores)
-            # _, similarity_scores = self.get_similarity_scores(self.X_pool, tempTrain)
             print("Getting query number ",i+1, end="\r")
-            # print(1)
             dists = np.sum((hot_pool - hot_deleted)**2, axis=1)
             for j in range(len(similarity_scores)):
                 # print("Hot Deleted: ",hot_deleted)
@@ -270,10 +281,13 @@ class QuantizedActiveLearner:
                     # distance_scores[j] = dist
                     squared_dists[j] = dists[j]
                     similarity_scores[j] = 1 - math.sqrt(dists[j])
+            
             scores = proximity_weight + (1 - proximity_weight) * total_ml_uncertainty
-            scores = scores**3
+            scores = scores**(1/proximity_weight)
             chosen_index = np.random.choice(len(scores), p=scores/np.sum(scores))
             error = total_ml_uncertainty[chosen_index]
+            
+            
             indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-0.01 <= value <= error+0.01]
             max_index = max(indexes, key=lambda i: squared_dists[i])
             
@@ -296,12 +310,16 @@ class QuantizedActiveLearner:
         transformed_pool = pca.transform(self.X_pool)
         transformed_training = pca.transform(self.X_train)
         transformed_batch = pca.transform(batch)
+
+        transformed_calib = pca.transform(self.X_calib)
         # print(pd.Series(scores).describe())
         with plt.style.context(plt.style.available[7]):
             plt.figure(figsize=(8, 8))
             plt.scatter(transformed_pool[:, 0], transformed_pool[:, 1], c=total_ml_uncertainty, cmap='viridis', label='unlabeled')
-            plt.scatter(transformed_training[:, 0], transformed_training[:, 1], c='r', s=70, label='labeled')
+            plt.scatter(transformed_training[:, 0], transformed_training[:, 1], c='r', s=70, label='Labeled for training')
+            plt.scatter(transformed_calib[:, 0], transformed_calib[:, 1], s=70, label='Labeled for testing')
             plt.scatter(transformed_batch[:, 0], transformed_batch[:, 1], c='k', s=60, label='queried')
+            
             plt.colorbar()
             plt.title('Scores of query #'+str(self.queryNum))
             plt.legend()
@@ -320,7 +338,33 @@ class QuantizedActiveLearner:
             self.Y_train_perfs = np.append(self.Y_train_perfs, Y_perfs, axis=0)
         if not np.all(self.Y_train_success):
             self.fail_predictor.fit(self._convert_to_one_hot(self.X_train), self.Y_train_success)
-        X_train, X_calib, Y_train, Y_calib = train_test_split(self.X_train, self.Y_train_perfs, test_size=0.2, random_state=MEANING_OF_LIFE)
+        # ORIGINAL TEST SPLIT
+        # X_train, X_calib, Y_train, Y_calib = train_test_split(self.X_train, self.Y_train_perfs, test_size=0.2, random_state=MEANING_OF_LIFE)
+        
+        # NEW TEST SPLIT METHOD
+        num_test = len(self.X_train) // 5
+
+        ind = np.random.choice(len(self.X_train), 1)
+        X_calib = self.X_train[ind]
+        X_train = np.delete(self.X_train, ind, axis=0)
+        Y_calib = self.Y_train_perfs[ind]
+        Y_train = np.delete(self.Y_train_perfs, ind, axis=0)
+        # print("X_train: ",X_train)
+        # print("X_calib: ",X_calib)
+        for i in range(num_test-1):
+            # print(i)
+            dists, _ = self.get_similarity_scores(X_train, X_calib)
+            ind = np.argmax(dists)
+            # print("Ind deleted: ",ind)
+            X_calib = np.append(X_calib, [X_train[ind]], axis=0)
+            X_train = np.delete(X_train, ind, axis=0)
+            Y_calib = np.append(Y_calib, [Y_train[ind]], axis=0)
+            Y_train = np.delete(Y_train, ind, axis=0)
+        # END NEW SPLIT METHOD
+
+
+        # print(X_calib)
+        # print(Y_calib)
         self.X_calib = X_calib
         self.Y_calib = Y_calib
         X_train_hots = self._convert_to_one_hot(X_train)
@@ -433,10 +477,11 @@ class QuantizedActiveLearner:
         return dists, 1-dists
 
     def get_overall_accuracy(self, true_vals):
-        mses = []
+        mapes = []
         for i in range(len(self.target_perfs)):
-            # We get mean squared error for each performance value
+            # We get mean percentage error for each performance value
+            print("Getting overall accuracy for ", self.target_perfs[i].label, "...")
             preds = self.target_perfs[i].regressor.predict(self._convert_to_one_hot(self.all_stuff))
-            mses.append(np.mean(np.abs((true_vals[:, i] - preds)/true_vals[:, i])))
-        # Return the harmonic mean of the mses
-        return len(mses)/np.sum(1.0/np.array(mses))
+            mapes.append(np.mean(np.abs((true_vals[:, i] - preds)/true_vals[:, i])))
+        # Return the harmonic mean of the mapes
+        return len(mapes)/np.sum(1.0/np.array(mapes))
