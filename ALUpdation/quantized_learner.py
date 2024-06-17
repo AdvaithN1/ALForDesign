@@ -255,7 +255,7 @@ class QuantizedActiveLearner:
         if self.use_absolute_query_strategy:
             indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-1 <= value <= error+1]
         else:
-            indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-0.1 <= value <= error+0.1]
+            indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-0.15 <= value <= error+0.15]
         max_index = max(indexes, key=lambda i: squared_dists[i])
             
         
