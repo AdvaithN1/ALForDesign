@@ -3,7 +3,7 @@ import sobol_seq
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
-from .datasetup import HyperparamDataSetup, ContinuousDesignBound, CategoricalDesignBound, TargetPerformanceHyperparam, GluonClassifier
+from .datasetup import HyperparamDataSetup, ContinuousDesignBound, CategoricalDesignBound, TargetPerformanceHyperparam, GluonClassifier, GluonRegressor
 import math
 from .helper import classifier_predict_simple_uncertainty, rsquared, get_regressor_uncertainty
 import tensorflow as tf
@@ -104,7 +104,8 @@ class QuantizedActiveLearner:
                 # one_hot = np.append(one_hot, np.eye(len(self.params[i].categories))[X[:,i]], axis=1)
         return np.transpose(one_hot)
 
-    def __init__(self, data_pack:HyperparamDataSetup, fail_predictor=None, use_absolute_query_strategy=False, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
+    def __init__(self, data_pack:HyperparamDataSetup, fail_predictor=None, use_absolute_query_strategy=False, classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]=classifier_predict_simple_uncertainty, redundancy_regressor=None, regressor_accuracy:Callable[[Any, np.ndarray, np.ndarray],float]=get_regressor_accuracy, get_valid_func:Callable[[np.ndarray],np.ndarray]=get_valid, X_train: np.ndarray=None, Y_train_success: np.ndarray=None, Y_train_perfs: np.ndarray=None, skip_redundancy = False, DESIGN_SPACE_DENSITY:int=100000, UNCERTAINTY_THRESHOLD:float=0.05, DROPOUT_RATE:float=0.2):
+        self.skip_redundancy = skip_redundancy
         self.use_absolute_query_strategy = use_absolute_query_strategy
         if(fail_predictor is None):
             total_input_len = 0
@@ -327,7 +328,6 @@ class QuantizedActiveLearner:
         return batch
         
     def teach(self, X:np.ndarray, Y_success:np.ndarray, Y_perfs:np.ndarray, proximity_weight=0.1) -> None:
-        print("Fitting failure classifier...")
         if(len(self.X_train) == 0):
             self.X_train = np.array(X)
             self.Y_train_success = np.array(Y_success)
@@ -337,7 +337,10 @@ class QuantizedActiveLearner:
             self.Y_train_success = np.append(self.Y_train_success, Y_success, axis=0)
             self.Y_train_perfs = np.append(self.Y_train_perfs, Y_perfs, axis=0)
         if not np.all(self.Y_train_success):
+            print("Fitting failure classifier...")
             self.fail_predictor.fit(self._convert_to_one_hot(self.X_train), self.Y_train_success)
+        else:
+            print("Skipping Failure Classifier fitting due to no failures.")
         # ORIGINAL TEST SPLIT
         # X_train, X_calib, Y_train, Y_calib = train_test_split(self.X_train, self.Y_train_perfs, test_size=0.2, random_state=MEANING_OF_LIFE)
         
@@ -363,8 +366,11 @@ class QuantizedActiveLearner:
         # END NEW SPLIT METHOD
 
 
-        # print(X_calib)
-        # print(Y_calib)
+        # print("X_calib", X_calib)
+        # print("Y_calib", Y_calib)
+        # print("X_train", X_train)
+        # print("Y_train", Y_train)
+
         self.X_calib = X_calib
         self.Y_calib = Y_calib
         X_train_hots = self._convert_to_one_hot(X_train)
@@ -412,8 +418,8 @@ class QuantizedActiveLearner:
                 preds = np.ones(len(self.X_pool))
             # uncertainty = 1-abs(2*preds-1)
             # No need for classifier uncertainty since it's already biased towards valid
-            print("Preds for ", perf.label, ": ", preds)
-            print("minimum pred: ", np.min(preds))
+            # print("Preds for ", perf.label, ": ", preds)
+            # print("minimum pred: ", np.min(preds))
             # uncertainty_scores = proximity_weight * (1 - similarity_scores) + (1 - proximity_weight) * uncertainty
             # certainty_scores = 1 - uncertainty_scores
             # print("Fail Predictions: ", predictions)
@@ -437,9 +443,10 @@ class QuantizedActiveLearner:
         # print("MIN CERTAINTY SCORE: ", np.min(total_invalidity))
         stack = np.transpose(stack)
 
-        print("Point with min validity score score: ", self.X_pool[np.argmin(total_invalidity)])
-        print("min invalidity score: ", np.min(total_invalidity))
+        # print("Point with min validity score score: ", self.X_pool[np.argmin(total_invalidity)])
+        # print("min invalidity score: ", np.min(total_invalidity))
         # print("stack: ",stack)
+        
         initialLen = len(self.X_pool)
         deleted = stack[mask]
         deletedPoints = self.X_pool[mask]
@@ -458,12 +465,12 @@ class QuantizedActiveLearner:
                 print("    Deleted", perfsdict[i+1], "points from pool due to certain invalidity for", self.target_perfs[i].label,".")
         print("Total remining points in the pool/design space: ", len(self.X_pool))
         print('-'*70)
-
-        for i in range(len(self.target_perfs)):
-            print("Fitting redundancy regressor for", self.target_perfs[i].label, "...")
-            accuracy = self.regressor_accuracy_func(self.redundancy_regressor, np.delete(self.Y_train_perfs, i, axis=1), self.Y_train_perfs[:, i])
-            if(accuracy>REDUNDANCY_THRESHOLD):
-                print('\033[1m'+'DETECTED REDUNDANT PERFORMANCE VALUE'+'\033[0m'+': Accuracy for predicting ', self.target_perfs[i].label, " from other performance values is ", accuracy)
+        if not self.skip_redundancy:
+            for i in range(len(self.target_perfs)):
+                print("Fitting redundancy regressor for", self.target_perfs[i].label, "...")
+                accuracy = self.regressor_accuracy_func(self.redundancy_regressor, np.delete(self.Y_train_perfs, i, axis=1), self.Y_train_perfs[:, i])
+                if(accuracy>REDUNDANCY_THRESHOLD):
+                    print('\033[1m'+'DETECTED REDUNDANT PERFORMANCE VALUE'+'\033[0m'+': Accuracy for predicting ', self.target_perfs[i].label, " from other performance values is ", accuracy)
         self.queryNum += 1
         return deletedPoints
 
@@ -480,8 +487,10 @@ class QuantizedActiveLearner:
         mapes = []
         for i in range(len(self.target_perfs)):
             # We get mean percentage error for each performance value
-            print("Getting overall accuracy for ", self.target_perfs[i].label, "...")
-            preds = self.target_perfs[i].regressor.predict(self._convert_to_one_hot(self.all_stuff))
+            print("Getting TRUE overall accuracy for ", self.target_perfs[i].label, "...")
+            reg = GluonRegressor(self.target_perfs[i].label)
+            reg.fit(self._convert_to_one_hot(self.X_train), self.Y_train_perfs[:, i])
+            preds = reg.predict(self._convert_to_one_hot(self.all_stuff))
             mapes.append(np.mean(np.abs((true_vals[:, i] - preds)/true_vals[:, i])))
         # Return the harmonic mean of the mapes
         return len(mapes)/np.sum(1.0/np.array(mapes))
