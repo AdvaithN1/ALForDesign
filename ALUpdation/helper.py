@@ -33,9 +33,16 @@ def get_regressor_uncertainty(regressor, X_pool:np.ndarray, X_calib:np.ndarray, 
     # print("Calib predictions:", calib_predictions)
     # print("Calib y:", y_calib)
     calib_residuals = np.abs(calib_predictions - y_calib)
-    mape = np.mean(calib_residuals / np.abs(y_calib))
+    mape = np.mean(calib_residuals / (np.abs(y_calib)+0.0000001))
     knn = KNeighborsRegressor(n_neighbors=1)
-    normalized_residuals = (calib_residuals - np.min(calib_residuals)) / (np.max(calib_residuals) - np.min(calib_residuals))
+
+    # OLD METHOD OF NORMALIZATION
+    # normalized_residuals = (calib_residuals - np.min(calib_residuals)) / (np.max(calib_residuals) - np.min(calib_residuals))
+    
+
+    normalized_residuals = (calib_residuals) / (np.max(calib_residuals))
+
+    
     knn.fit(X_calib, normalized_residuals)
 
     return np.array(knn.predict(X_pool)).flatten(), mape

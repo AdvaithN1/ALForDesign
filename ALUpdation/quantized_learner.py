@@ -270,6 +270,9 @@ class QuantizedActiveLearner:
         hot_pool = np.delete(hot_pool, max_index, axis=0)
         squared_dists = np.delete(squared_dists, max_index, axis=0)
         # print("hot pool now: ",hot_pool)
+        scores = proximity_weight + (1 - proximity_weight) * total_ml_uncertainty
+
+        scores = scores**(1/proximity_weight)
 
         for i in range(1, batchNum):
             print("Getting query number ",i+1, end="\r")
@@ -283,13 +286,13 @@ class QuantizedActiveLearner:
                     squared_dists[j] = dists[j]
                     similarity_scores[j] = 1 - math.sqrt(dists[j])
             
-            scores = proximity_weight + (1 - proximity_weight) * total_ml_uncertainty
-            scores = scores**(1/proximity_weight)
             chosen_index = np.random.choice(len(scores), p=scores/np.sum(scores))
             error = total_ml_uncertainty[chosen_index]
             
-            
-            indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-0.01 <= value <= error+0.01]
+            if self.use_absolute_query_strategy:
+                indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-1 <= value <= error+1]
+            else:
+                indexes = [index for index, value in enumerate(total_ml_uncertainty) if error-0.1 <= value <= error+0.1]
             max_index = max(indexes, key=lambda i: squared_dists[i])
             
             hot_deleted = self._convert_to_one_hot_hypercube([self.X_pool[max_index]])[0]
@@ -485,12 +488,15 @@ class QuantizedActiveLearner:
 
     def get_overall_accuracy(self, true_vals):
         mapes = []
+        all = []
         for i in range(len(self.target_perfs)):
             # We get mean percentage error for each performance value
             print("Getting TRUE overall accuracy for ", self.target_perfs[i].label, "...")
             reg = GluonRegressor(self.target_perfs[i].label)
             reg.fit(self._convert_to_one_hot(self.X_train), self.Y_train_perfs[:, i])
             preds = reg.predict(self._convert_to_one_hot(self.all_stuff))
-            mapes.append(np.mean(np.abs((true_vals[:, i] - preds)/true_vals[:, i])))
+            mapes.append(np.mean(np.abs((true_vals[:, i] - preds)/(true_vals[:, i]+0.0000001))))
+            all.append((self.target_perfs[i].label+" Mape", mapes[-1]))
         # Return the harmonic mean of the mapes
-        return len(mapes)/np.sum(1.0/np.array(mapes))
+        all.append(("Average Mapes", len(mapes)/np.sum(1.0/np.array(mapes))))
+        return all
