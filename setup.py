@@ -23,6 +23,7 @@ setup(
         'scikit-learn',
         'matplotlib',
         'sobol_seq',
-        'autogluon'
+        'autogluon',
+        'Pillow==6.2.1'
     ]
 ) 

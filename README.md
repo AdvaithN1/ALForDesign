@@ -17,7 +17,7 @@ def random_regression_problem(X):
     ret = []
     for row in X:
         perf1, perf2, perf3, perf4 = row
-        ret.append([perf1*perf2, perf3**np.sin(perf1)-perf4, np.cos(perf1+perf2+perf3+perf4)])
+        ret.append([perf1*perf2, perf3**np.abs(np.sin(perf1))-perf4, np.cos(perf1+perf2+perf3+perf4)])
     return np.array(ret)
 
 learner = QuantizedActiveLearner(HyperparamDataSetup(
@@ -30,7 +30,7 @@ learner = QuantizedActiveLearner(HyperparamDataSetup(
     [
         TargetPerformanceHyperparam(lambda x: np.ones(x.shape[0]),"FirstExamplePerformanceVal"),
         TargetPerformanceHyperparam(lambda x: np.ones(x.shape[0]),"SecondExamplePerformanceVal"),
-        TargetPerformanceHyperparam(lambda x: np.ones(x.shape[0]),"SecondExamplePerformanceVal")
+        TargetPerformanceHyperparam(lambda x: np.ones(x.shape[0]),"ThirdExamplePerformanceVal")
     ]),
     DESIGN_SPACE_DENSITY=100000,
     UNCERTAINTY_DROP_THRESHOLD=0.01,
