@@ -1,5 +1,9 @@
 import numpy as np
 from sklearn.neighbors import KNeighborsRegressor
+# from sklearn.linear_model import LinearRegression
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
 
 def classifier_predict_simple_uncertainty(fail_predictor, X_pool:np.ndarray):
     """
@@ -34,7 +38,8 @@ def get_regressor_uncertainty(regressor, X_pool:np.ndarray, X_calib:np.ndarray, 
     # print("Calib y:", y_calib)
     calib_residuals = np.abs(calib_predictions - y_calib)
     mape = np.mean(calib_residuals / (np.abs(y_calib)+0.0000001))
-    knn = KNeighborsRegressor(n_neighbors=1)
+    resid_predictor = KNeighborsRegressor(n_neighbors=3, weights='distance')
+    # resid_predictor = LinearRegression()
 
     # OLD METHOD OF NORMALIZATION
     # normalized_residuals = (calib_residuals - np.min(calib_residuals)) / (np.max(calib_residuals) - np.min(calib_residuals))
@@ -43,9 +48,9 @@ def get_regressor_uncertainty(regressor, X_pool:np.ndarray, X_calib:np.ndarray, 
     normalized_residuals = (calib_residuals) / (np.max(calib_residuals))
 
     
-    knn.fit(X_calib, normalized_residuals)
+    resid_predictor.fit(X_calib, normalized_residuals)
 
-    return np.array(knn.predict(X_pool)).flatten(), mape
+    return np.array(resid_predictor.predict(X_pool)).flatten(), mape
 
     # models = regressor.get_model_names()
     # totals = []
@@ -60,3 +65,12 @@ def get_regressor_uncertainty(regressor, X_pool:np.ndarray, X_calib:np.ndarray, 
     # return variances
 
     # return np.zeros(len(X_pool)) # Temporary
+
+def get_bayesian_uncertainty(X_pool:np.ndarray, X_train:np.ndarray, Y_train:np.ndarray):
+    gp = GaussianProcessRegressor(n_restarts_optimizer=10, random_state=42)
+    gp.fit(X_train, Y_train)
+    _, stds = gp.predict(X_pool, return_std=True)
+    normalized_stds = stds/np.max(stds)
+    print("Normalized STDs:", normalized_stds)
+    print("Mean STD:", np.mean(stds))
+    return np.array(normalized_stds).flatten(), np.mean(normalized_stds)
