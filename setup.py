@@ -1,15 +1,15 @@
 from setuptools import setup
 
 setup(
-    name='al_for_parametric_design_datasets',
-    version='0.0.1',
+    name='al_for_design',
+    version='0.0.3',
     author='Advaith Narayanan',
     author_email='advaith.narayanan20@gmail.com',
     description='A library for optimally generating data with batch active learning in design contexts',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     license='MIT',
-    packages=['ALUpdation'],
+    packages=['AL_for_design'],
     classifiers=[
         'Development Status :: 3 - Alpha',
         'License :: OSI Approved :: MIT License',

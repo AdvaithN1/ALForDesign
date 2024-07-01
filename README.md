@@ -13,6 +13,13 @@ ALFD is a package for generating targeted design datasets. It can handle unique 
 import numpy as np
 from AL_for_design.quantized_learner import TargetPerformanceHyperparam, ContinuousDesignBound, CategoricalDesignBound, HyperparamDataSetup, QuantizedActiveLearner
 
+def random_regression_problem(X):
+    ret = []
+    for row in X:
+        perf1, perf2, perf3, perf4 = row
+        ret.append([perf1*perf2, perf3**np.sin(perf1)-perf4, np.cos(perf1+perf2+perf3+perf4)])
+    return np.array(ret)
+
 learner = QuantizedActiveLearner(HyperparamDataSetup(
     [
         ContinuousDesignBound(3,9,"FirstExampleParameter"),
@@ -29,6 +36,14 @@ learner = QuantizedActiveLearner(HyperparamDataSetup(
     UNCERTAINTY_DROP_THRESHOLD=0.01,
     skip_redundancy = True
     )
+
+num_batches = 5
+batch_size = 100
+
+for i in range(num_batches):
+    queried = learner.query(batch_size)
+    deleted = learner.teach(queried, np.ones(batch_size), random_regression_problem(queried))
+
 ```
 
 ## How it Works
@@ -38,6 +53,7 @@ learner = QuantizedActiveLearner(HyperparamDataSetup(
 The following steps outline the querying process in the best performing Active Learner ("Quantized Active Learner")
 
 1. For all points in the pool, we calculate the harmonic mean of the uncertainties for all the performance regressors and the distance matrix to labeled points.
+2. Using the [testing data](#teaching-strategy), we set the proximity weight accordingly. If the regressors have a high average error, we set the proximity weight high to maximize exploration, whereas if there is a low average error, we set the proximity weight low to maximize exploitation.
 2. We use the following experimentally derived formula to "score" each point based on the predicted error in step 1:
 $\text{scores}=(\text{proximity\_weight}+(1-\text{proximity\_weight})\cdot\text{error})^\text{proximity\_weight}$
 3. We normalize the scores to a probability distribution.
@@ -72,7 +88,7 @@ Using the above distance computation strategy, we can form a normalized distance
 ## Examples of ALFD
 
 ### Example of 3 ALFD Queries Using Random Regression Problems
-
+<!-- 
 <style>
   .image-container {
     display: flex;
@@ -95,16 +111,19 @@ Using the above distance computation strategy, we can form a normalized distance
       width: 80%;
     }
   }
-</style>
+</style> -->
 
-<div class="image-container">
-    <img src="query1.png" alt="Image 1"/>
-    <img src="query2.png" alt="Image 1"/>
-    <img src="query3.png" alt="Image 1"/>
+<div style="display: flex; justify-content: space-around;">
+    <img src="https://github.com/AdvaithN1/ALForDesign/raw/main/query1.png" alt="Query 1" style="width: 30%;"/>
+    <img src="https://github.com/AdvaithN1/ALForDesign/raw/main/query2.png" alt="Query 2" style="width: 30%;"/>
+    <img src="https://github.com/AdvaithN1/ALForDesign/raw/main/query3.png" alt="Query 3" style="width: 30%;"/>
 </div>
 In the above diagrams, lighter colors indicate higher predicted error. The Black dots are points selected for querying, while Red and Blue points are labeled. ALFD more densely queries places of higher predicted error, but still minimizes proximity to labeled points.
 
 ### Example of the average MAPE values of the performance value regressors 
-!["ALFD vs Uniform Querying Performance"](performance.png)
+!["ALFD vs Uniform Querying Performance"](https://github.com/AdvaithN1/ALForDesign/raw/main/performance.png)
+
+We do not rigorously test this query strategy, but rather propose this as a framework for novel approaches to Active Learning for Design.
+
 ## License
 Open-sourced under the MIT License. See ```LICENSE``` for more information.

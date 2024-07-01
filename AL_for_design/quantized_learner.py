@@ -234,6 +234,9 @@ class QuantizedActiveLearner:
             The number of points to query.
         proximity_weight: float: default=1
             The weight of the proximity score. Default is 1. If 0, the Active Learner densely sample points of high average uncertainty. If 1, the Active Learner will mostly uniformly sample the design space. If between 0 and 1, the Active Learner will consider a weighted average of the proximity score and the uncertainty of the performance values, and will sample points with a probability distribution accordingly.
+        
+        Returns:
+            Numpy array of the queried points.
         """
         
         if len(self.X_pool) == 0:
@@ -387,7 +390,7 @@ class QuantizedActiveLearner:
         plt.show()
         return batch
         
-    def teach(self, X:np.ndarray, Y_success:np.ndarray, Y_perfs:np.ndarray, proximity_weight=0.1) -> None:
+    def teach(self, X:np.ndarray, Y_success:np.ndarray, Y_perfs:np.ndarray, proximity_weight=0.1) -> np.ndarray:
         """
         Teaches the Active Learner with the queried points.
 
@@ -401,6 +404,9 @@ class QuantizedActiveLearner:
             The performance values of the design points. Must be a 2D array.
         proximity_weight: float: default=0.1
             Used in determining invalid points. Default is 0.1. If 0, the Active Learner will only consider the uncertainty of the performance value regressors. If 1, the Active Learner will only consider the proximity score. If between 0 and 1, the Active Learner will consider a weighted average of the proximity score and the uncertainty of the performance values.
+        
+        Returns:
+            Numpy array of the deleted points.
         """
         if(len(self.X_train) == 0):
             self.X_train = np.array(X)
@@ -558,6 +564,9 @@ class QuantizedActiveLearner:
         return dists, 1-dists
 
     def get_overall_accuracy(self, true_vals):
+        """
+        To be used only for testing the true accuracy of the ActiveLearner regressors.
+        """
         mapes = []
         all = []
         for i in range(len(self.target_perfs)):
