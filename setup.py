@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='al_for_design',
-    version='0.0.3',
+    version='0.0.1',
     author='Advaith Narayanan',
     author_email='advaith.narayanan20@gmail.com',
     description='A library for optimally generating data with batch active learning in design contexts',
