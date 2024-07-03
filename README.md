@@ -78,7 +78,7 @@ where $n$ is the number of performance values, $P_i$ is the predicted validity p
 ### Error Estimation Strategy
 To estimate the error of the performance value regressor, we calculate the residuals of the predictions in the testing data. The testing data selection process is described [here](#teaching-strategy). 
 
-We then normalize the residuals, and train a KNN to predict the error for any point in the design space. 
+We then normalize the residuals, and train a KNN to predict the error for any point in the design space. We use a KNN, because it's output prediction range is limited to the range of the residuals. This ensures that the predictions are always between 0 and 1.
 
 ### Distance Matrix Computation
 To compute the distance between two points, we first need to encode each categorical component as a one-hot vector. This ensures that euclidean distance computations do not depend on category order. However, the the distances between 2 one-hot vectors needs to be normalized, which can be done by dividing by $\sqrt{2}$. Lastly, the distances need to be normalized. This can be done by first normalizing each parameter value and converting the design space into a unit hypercube. Then, we can divide each design vector component by $\sqrt{n}$, where n is the number of performance values. Finally, we get a modified design space, where the maximum distance between 2 points (i.e. the diagonal of the multidimensional design space) is 1, and each parameter is weighted equally when computing the euclidean distance.
