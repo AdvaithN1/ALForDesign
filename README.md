@@ -55,7 +55,7 @@ The following steps outline the querying process in the best performing Active L
 1. For all points in the pool, we calculate the harmonic mean of the uncertainties for all the performance regressors and the distance matrix to labeled points.
 2. Using the [testing data](#teaching-strategy), we set the proximity weight accordingly. If the regressors have a high average error, we set the proximity weight high to maximize exploration, whereas if there is a low average error, we set the proximity weight low to maximize exploitation.
 2. We use the following experimentally derived formula to "score" each point based on the predicted error in step 1:
-$\text{scores}=(\text{proximity\_weight}+(1-\text{proximity\_weight})\cdot\text{error})^\text{proximity\_weight}$
+$\text{scores}=(\text{proximity\_weight}+(1-\text{proximity\_weight})\cdot\text{error})^\frac{1}{\text{proximity\_weight}}$
 3. We normalize the scores to a probability distribution.
 4. We select a point at random from the pool, weighted by the probability distribution.
 5. We create an predicted error interval with an unfixed width of $0.2$. This interval is centered at the predicted error of the point selected point.

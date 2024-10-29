@@ -115,12 +115,12 @@ class QuantizedActiveLearner:
         fail_predictor: default=GluonClassifier("Failure Prediction")
             The classifier that predicts whether a point will fail or not. Default is an AutoGluon classifier wrapper GluonClassifier with the fit and predict methods.
         use_absolute_query_strategy: bool: default=False
-            Whether to use the absolute query strategy. Default is False. If true, the Active Learner will choose points uniformly.
+            Whether to use the absolute query strategy. Default is False. If true, the Active Learner will not dynamically update the proximity weight.
         classifier_predict_uncertainty_func: Callable[[Any, np.ndarray], Tuple[np.ndarray, np.ndarray]]: default=classifier_predict_simple_uncertainty
             The function that predicts the uncertainty of the classifier. Default is the classifier_predict_simple_uncertainty function. Takes in Regressor and X_pool, and returns the predictions and uncertainty for each point in X_pool.
         redundancy_regressor: default=None
             The regressor that predicts the redundancy of performance values. Default is None. If None, a neural network tf regressor will be used.
-        redundancy_regressor_accuracy : Callable[[Any, np.ndarray, np.ndarray],float]: default=get_redundancy_regressor_accuracy
+        redundancy_regressor_accuracy: Callable[[Any, np.ndarray, np.ndarray],float]: default=get_redundancy_regressor_accuracy
             The function that calculates the accuracy of the regressor. Default is the get_regressor_accuracy function, which uses the r^2 metric. Takes in the regressor, X, and Y, and returns the accuracy.
         get_valid_func: Callable[[np.ndarray],np.ndarray]: default=get_valid
             The function that returns a boolean array, where True denotes a valid design. Default is get_valid, which returns all True.
@@ -215,14 +215,16 @@ class QuantizedActiveLearner:
                 raise ValueError("Y_train_perfs must have the same number of columns as the number of target performances (", len(self.target_perfs), ").")
             if(np.all(np.isin(Y_train_success, [True, False, 1, 0]))):
                 raise ValueError("Y_train_success must contain only boolean or binary values.")
-            self.X_train = np.array(X_train)
-            self.Y_train_success = np.array(Y_train_success)
-            self.Y_train_perfs = np.array(Y_train_perfs)
+            self.teach(np.array(X_train), np.array(Y_train_success), np.array(Y_train_perfs))
             self.queryNum = 1
-            self.fail_predictor.fit(self._convert_to_one_hot(X_train), Y_train_success)
-            for i in range(len(self.target_perfs)):
-                print("Fitting performance validity estimator for", self.target_perfs[i].label, "...")
-                self.target_perfs[i].regressor.fit(self._convert_to_one_hot(self.X_train), self._convert_to_one_hot(self.Y_train_perfs[:,i]))
+            # self.X_train = np.array(X_train)
+            # self.Y_train_success = np.array(Y_train_success)
+            # self.Y_train_perfs = np.array(Y_train_perfs)
+            # self.queryNum = 1
+            # self.fail_predictor.fit(self._convert_to_one_hot(X_train), Y_train_success)
+            # for i in range(len(self.target_perfs)):
+            #     print("Fitting performance validity estimator for", self.target_perfs[i].label, "...")
+            #     self.target_perfs[i].regressor.fit(self._convert_to_one_hot(self.X_train), self._convert_to_one_hot(self.Y_train_perfs[:,i]))
 
     def query(self, batchNum:int, proximity_weight:float=1) -> np.ndarray:
         """
