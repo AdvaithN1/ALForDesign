@@ -5,6 +5,11 @@ ALFD generates parametric design data optimally using Batch Active Learning.
 
 ALFD is a package for generating targeted design datasets. It can handle unique constraints for both performance values and design parameter values. It is also compatible with any pair of 2+ dimensional parameter and performance spaces.
 
+All relevant code is contained in the following files:
+- AL_for_design/quantized_learner
+- AL_for_design/helper.py
+- AL_for_design/datasetup.py
+
 ## Quick Start
 1. Install ALFD with ```pip install AL_for_design```
 2. Run:
