@@ -261,7 +261,8 @@ class QuantizedActiveLearner:
             fail_predictions = np.ones(len(self.X_pool))
         else:
             fail_predictions = self.fail_predictor.predict(self._convert_to_one_hot(self.X_pool)).flatten()
-        total_ml_uncertainty = 1-abs(2*fail_predictions-1)
+        total_ml_uncertainty = -fail_predictions * np.log2(fail_predictions) - (1 - fail_predictions) * np.log2(1 - fail_predictions)
+        total_ml_uncertainty = np.nan_to_num(total_ml_uncertainty)
         total_residuals = 0
         # print("Fail preds: ", fail_predictions)
         # print("Success: ",self.Y_train_success)
