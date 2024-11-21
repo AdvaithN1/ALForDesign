@@ -1,6 +1,8 @@
 # Batch Active Learning for Design Dataset Generation
 ALFD generates parametric design data optimally using Batch Active Learning.
 
+<img src="https://github.com/AdvaithN1/ALForDesign/raw/main/IMECE_Poster.jpeg"/>
+
 ## Description
 
 ALFD is a package for generating targeted design datasets. It can handle unique constraints for both performance values and design parameter values. It is also compatible with any pair of 2+ dimensional parameter and performance spaces.
