@@ -1,8 +1,6 @@
 # Batch Active Learning for Design Dataset Generation
 ALFD generates parametric design data optimally using Batch Active Learning.
 
-<img src="https://github.com/AdvaithN1/ALForDesign/raw/main/IMECE_Poster.jpeg"/>
-
 ## Description
 
 ALFD is a package for generating targeted design datasets. It can handle unique constraints for both performance values and design parameter values. It is also compatible with any pair of 2+ dimensional parameter and performance spaces.
@@ -11,6 +9,19 @@ All relevant code is contained in the following files:
 - AL_for_design/quantized_learner
 - AL_for_design/helper.py
 - AL_for_design/datasetup.py
+
+## Motivation
+
+This work was motivated by my previous research on medical walker design optimization, where there were overrepresentations of undesired performance values, increased fail rates, and decreased surrogate regressor accuracies:  
+
+A Data-driven Recommendation Framework for Optimal Walker Designs:
+- Full Paper: https://arxiv.org/pdf/2310.18772  
+- GitHub: https://github.com/AdvaithN1/Walker-Optimization  
+- ASME IDETC-CIE: https://idetc.secure-platform.com/a/solicitations/228/sessiongallery/17287/application/145053
+
+## Poster
+
+<img src="https://github.com/AdvaithN1/ALForDesign/raw/main/IMECE_Poster.jpeg"/>
 
 ## Quick Start
 1. Install ALFD with ```pip install AL_for_design```
